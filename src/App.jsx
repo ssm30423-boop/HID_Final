@@ -125,6 +125,7 @@ export default function App() {
   const [entryHasText, setEntryHasText] = useState(false);
   const dockRef = useRef(null);
   const [dockHasText, setDockHasText] = useState(false);
+  const [dockFocused, setDockFocused] = useState(false);
   const [sentAt, setSentAt] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -297,6 +298,7 @@ export default function App() {
     setContent(t); setSentAt(new Date());
     openIds.forEach((id) => { const r = roles.find((x) => x.id === id); if (r) runLens(r, t); });
     if (el) el.value = ""; setDockHasText(false); requestAnimationFrame(() => adjust(dockRef.current));
+    if (el) el.blur(); setDockFocused(false);
   }
 
   const styleBlock = (
@@ -434,11 +436,21 @@ export default function App() {
         .dock { position:fixed; left:var(--side); right:0; bottom:0; z-index:30; padding:18px 32px 22px; background:linear-gradient(to top, #08080A 55%, rgba(8,8,10,0)); }
         .dock-inner { max-width:1080px; margin:0 auto; display:flex; align-items:center; gap:10px; background:rgba(20,20,23,.92); backdrop-filter:blur(12px); border:1px solid #2c2c31; border-radius:24px; padding:8px 8px 8px 10px; box-shadow:0 12px 50px rgba(0,0,0,.5); transition:transform .35s cubic-bezier(.22,1,.36,1), border-color .25s, box-shadow .35s; }
         .dock-inner:focus-within { border-color:#3d3d44; }
-        /* 음성 인식 중: 입력창이 떠오르고 커지며, 배경은 가라앉음 */
-        .listen-backdrop { position:fixed; inset:0; z-index:29; background:rgba(8,8,10,.45); backdrop-filter:blur(5px); animation:fadeIn .25s ease; }
-        .dock.listening { z-index:31; }
+        /* 입력 집중 모드: 배경 dim (블러 없음) — 포커스는 옅게, 음성 인식은 진하게 */
+        .listen-backdrop { position:fixed; inset:0; z-index:29; background:rgba(8,8,10,.45); animation:fadeIn .22s ease; pointer-events:none; }
+        .listen-backdrop.strong { background:rgba(8,8,10,.62); pointer-events:auto; }
+        .dock { z-index:31; }
         .dock.listening .dock-inner { transform:translateY(-10px) scale(1.025); border-color:rgba(229,112,91,.5); box-shadow:0 22px 70px rgba(0,0,0,.65), 0 0 0 4px rgba(229,112,91,.10); }
-        .dock.listening textarea::placeholder { color:#E5705B; }
+        /* 플레이스홀더 shimmer — 기준색 위로 밝은 하이라이트가 주기적으로 흐름 */
+        .ph-wrap { position:relative; flex:1; min-width:0; display:flex; }
+        .ph-shimmer { position:absolute; top:50%; transform:translateY(-50%); pointer-events:none; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.5;
+          --ph-base:#6B6B72; --ph-sheen:#DCDCE2;
+          background:linear-gradient(90deg, var(--ph-base) 40%, var(--ph-sheen) 50%, var(--ph-base) 60%);
+          background-size:200% 100%; -webkit-background-clip:text; background-clip:text; color:transparent;
+          animation:phShimmer 2.6s linear infinite; }
+        .ph-shimmer.coral { --ph-base:#E5705B; --ph-sheen:#FFD9CF; }
+        @keyframes phShimmer { 0% { background-position:100% 0; } 100% { background-position:-100% 0; } }
+        @media (prefers-reduced-motion: reduce) { .ph-shimmer { animation:none; background:none; color:var(--ph-base); } }
         @media (prefers-reduced-motion: reduce) { .dock.listening .dock-inner { transform:none; } .listen-backdrop { backdrop-filter:none; } }
         .mic-btn { background:transparent; color:var(--mfg); border-radius:50%; }
         .mic-btn:hover { background:var(--muted); color:var(--fg); }
@@ -468,10 +480,19 @@ export default function App() {
             무엇을 공유해 볼까요?
           </h1>
           <div className="pill">
-            <textarea ref={entryRef} rows={1} defaultValue="" onInput={onEntryInput}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEntry(); } }}
-              placeholder="공유할 작업이나 변경사항을 적어보세요"
-              style={{ flex: 1, minWidth: 0, border: "none", outline: "none", resize: "none", background: "transparent", fontSize: 16, lineHeight: 1.5, color: "var(--fg)", minHeight: 24, maxHeight: 120, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "7px 0" }} />
+            <div className="ph-wrap">
+              <textarea ref={entryRef} rows={1} defaultValue="" onInput={onEntryInput}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (e.nativeEvent.isComposing || e.keyCode === 229) { setTimeout(submitEntry, 0); }
+                    else { submitEntry(); }
+                  }
+                }}
+                aria-label="공유할 작업이나 변경사항을 적어보세요"
+                style={{ width: "100%", border: "none", outline: "none", resize: "none", background: "transparent", fontSize: 16, lineHeight: 1.5, color: "var(--fg)", minHeight: 24, maxHeight: 120, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "7px 0" }} />
+              {!entryHasText && <span className="ph-shimmer" style={{ fontSize: 16, left: 0 }}>공유할 작업이나 변경사항을 적어보세요</span>}
+            </div>
             <RoleDropdown roles={roles} subjectId={subjectId} onSelect={setSubjectId} compact />
             <button className="btn btn-icon" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, background: entryHasText ? "var(--fg)" : "#2a2a2e", color: entryHasText ? "#18181B" : "var(--dim)" }}
               disabled={!entryHasText} onClick={submitEntry} title="시작"><ArrowUp size={18} /></button>
@@ -666,17 +687,32 @@ export default function App() {
         </div>
       </main>
 
-      {listening && <div className="listen-backdrop" onClick={stopVoice} />}
+      {(listening || dockFocused) && <div className={"listen-backdrop" + (listening ? " strong" : "")} onClick={listening ? stopVoice : undefined} />}
       <div className={"dock" + (listening ? " listening" : "")}>
         <div className="dock-inner">
           {speechSupported && (
             <button className={"btn btn-icon mic-btn" + (listening ? " listening" : "")} style={{ width: 34, height: 34, flexShrink: 0 }}
               title={listening ? "음성 입력 중지" : "음성으로 입력"} onClick={toggleVoice}><Mic size={17} /></button>
           )}
-          <textarea ref={dockRef} rows={1} defaultValue="" onInput={onDockInput}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendDock(); } }}
-            placeholder={listening ? "듣고 있어요… 말씀해 보세요" : "작업을 새로 입력하거나 수정하세요 — 열린 직군 렌즈가 한 번에 갱신됩니다"}
-            style={{ flex: 1, minWidth: 0, width: "100%", border: "none", outline: "none", resize: "none", background: "transparent", fontSize: 15, lineHeight: 1.5, color: "var(--fg)", minHeight: 24, maxHeight: 120, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "7px 4px" }} />
+          <div className="ph-wrap">
+            <textarea ref={dockRef} rows={1} defaultValue="" onInput={onDockInput}
+              onFocus={() => setDockFocused(true)} onBlur={() => setDockFocused(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  // 한글 조합 중 Enter: 조합이 확정된 다음 틱에 전송 (마지막 글자 누락 방지)
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) { setTimeout(sendDock, 0); }
+                  else { sendDock(); }
+                }
+              }}
+              aria-label="작업을 새로 입력하거나 수정하세요"
+              style={{ width: "100%", border: "none", outline: "none", resize: "none", background: "transparent", fontSize: 15, lineHeight: 1.5, color: "var(--fg)", minHeight: 24, maxHeight: 120, overflowY: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "7px 4px" }} />
+            {!dockHasText && (
+              <span className={"ph-shimmer" + (listening ? " coral" : "")} style={{ fontSize: 15, left: 4 }}>
+                {listening ? "듣고 있어요… 말씀해 보세요" : "작업을 새로 입력하거나 수정하세요 — 열린 직군 렌즈가 한 번에 갱신됩니다"}
+              </span>
+            )}
+          </div>
           <button className="btn btn-icon" style={{ width: 36, height: 36, borderRadius: "50%", flexShrink: 0, background: dockHasText ? "var(--fg)" : "#2a2a2e", color: dockHasText ? "#18181B" : "var(--dim)" }}
             disabled={!dockHasText} onClick={sendDock} title="보내기"><ArrowUp size={18} /></button>
         </div>
