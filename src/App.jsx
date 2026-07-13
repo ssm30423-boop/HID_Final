@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Plus, X, RefreshCw, Pencil, Check, ChevronRight, ChevronDown, ArrowUp, Trash2, Mic, Loader2, Sparkles, Copy } from "lucide-react";
+import { Plus, X, RefreshCw, Pencil, Check, ChevronRight, ChevronDown, ArrowUp, Trash2, Mic, Loader2, Sparkles, Copy, Info } from "lucide-react";
 
 const PALETTE = ["#4DB6A4", "#E0B341", "#D08AB0", "#93C47D", "#94A6EC", "#E0875E"];
 const soft = (hex) => hex + "1F";
@@ -46,8 +46,11 @@ async function translateMock(text, subject, target) {
   await delay(600 + Math.random() * 450);
   const snippet = text.trim().length > 24 ? text.trim().slice(0, 24) + "…" : text.trim();
   const headline = `${subject.name}가 공유한 "${snippet}" — ${target.name} 관점 요약`;
-  let points = DEMO[target.id];
-  if (!points) points = target.concerns.split(/[,，]/).map((s) => s.trim()).filter(Boolean).slice(0, 4).map((l) => ({ label: l, detail: `${l} 관점에서 이 작업을 검토할 때 먼저 확인할 부분입니다.` }));
+  // 관심사가 기본값 그대로일 때만 미리 준비된 예시를 쓰고,
+  // 사용자가 관심사를 수정했다면 그 관심사를 기반으로 응답을 구성한다.
+  const initial = INITIAL_ROLES.find((r) => r.id === target.id);
+  let points = initial && initial.concerns === target.concerns ? DEMO[target.id] : null;
+  if (!points) points = target.concerns.split(/[,，]/).map((s) => s.trim()).filter(Boolean).slice(0, 5).map((l) => ({ label: l, detail: `${l} 관점에서 이 작업을 검토할 때 먼저 확인할 부분입니다.` }));
   return { headline, points };
 }
 
@@ -156,6 +159,7 @@ export default function App() {
   function resendAll() {
     if (!content.trim()) return;
     setSentAt(new Date());
+    setConcernsDirty(false);
     const ids = Object.keys(panels).filter((id) => panels[id]);
     ids.forEach((id) => { const r = roles.find((x) => x.id === id); if (r) runLens(r, content); });
   }
@@ -184,7 +188,7 @@ export default function App() {
     const t = (el ? el.value : "").trim();
     setEditingWork(false);
     if (!t || t === content) return;
-    setContent(t); setSentAt(new Date());
+    setContent(t); setSentAt(new Date()); setConcernsDirty(false);
     const ids = Object.keys(panels).filter((id) => panels[id]);
     ids.forEach((id) => { const r = roles.find((x) => x.id === id); if (r) runLens(r, t); });
   }
@@ -278,13 +282,23 @@ export default function App() {
   }
 
   function changeSubject(id) {
-    setSubjectId(id); setEditingId(null);
+    setSubjectId(id); setEditingId(null); setConcernsDirty(false);
     const subj = roles.find((r) => r.id === id);
     openIds.forEach((pid) => { const r = roles.find((x) => x.id === pid); if (r) runLens(r, content, subj); });
   }
   function toggleLens(role) { if (panels[role.id]) closePanel(role.id); else if (canGenerate) runLens(role); }
   function closePanel(id) { setPanels((p) => { const n = { ...p }; delete n[id]; return n; }); }
-  function saveConcerns(id) { setRoles((rs) => rs.map((r) => (r.id === id ? { ...r, concerns: draft } : r))); setEditingId(null); }
+  const [concernsDirty, setConcernsDirty] = useState(false);
+
+  function saveConcerns(id) {
+    const items = draft.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+    if (items.length < 1 || items.length > 5) return; // 관심사는 1~5개
+    const normalized = items.join(", ");
+    const prev = roles.find((r) => r.id === id)?.concerns;
+    setRoles((rs) => rs.map((r) => (r.id === id ? { ...r, concerns: normalized } : r)));
+    if (panels[id] && prev !== normalized) setConcernsDirty(true); // 열린 렌즈의 관심사가 바뀜 → 갱신 안내
+    setEditingId(null);
+  }
   function removeRole(id) { setRoles((rs) => rs.filter((r) => r.id !== id)); setPanels((p) => { const n = { ...p }; delete n[id]; return n; }); setEditingId(null); }
   function addRole() {
     if (!newName.trim()) return;
@@ -295,7 +309,7 @@ export default function App() {
   function sendDock() {
     if (listening) stopVoice();
     const el = dockRef.current; const t = (el ? el.value : "").trim(); if (!t) return;
-    setContent(t); setSentAt(new Date());
+    setContent(t); setSentAt(new Date()); setConcernsDirty(false);
     openIds.forEach((id) => { const r = roles.find((x) => x.id === id); if (r) runLens(r, t); });
     if (el) el.value = ""; setDockHasText(false); requestAnimationFrame(() => adjust(dockRef.current));
     if (el) el.blur(); setDockFocused(false);
@@ -399,8 +413,10 @@ export default function App() {
         .main-inner { max-width:1080px; margin:0 auto; }
         .work-row { display:flex; justify-content:flex-end; margin-bottom:22px; }
         .work-col { display:flex; flex-direction:column; align-items:flex-end; max-width:78%; }
-        .work-bubble { background:#202024; border:1px solid var(--border); border-radius:18px; padding:12px 16px; font-size:15.5px; line-height:1.55; color:var(--fg); cursor:text; transition:border-color .15s; }
-        .work-bubble:hover { border-color:#3a3a40; }
+        .work-bubble { background:#202024; border:1px solid var(--border); border-radius:18px; padding:12px 16px; font-size:15.5px; line-height:1.55; color:var(--fg); cursor:default; }
+        .notice { display:flex; align-items:center; gap:10px; border:1px solid rgba(224,179,65,.38); background:rgba(224,179,65,.08); color:#E0B341; border-radius:14px; padding:11px 14px; font-size:13px; line-height:1.5; margin-bottom:18px; animation:fadeIn .2s ease; }
+        .notice-retry { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; height:30px; padding:0 13px; border-radius:16px; border:1px solid rgba(224,179,65,.45); background:rgba(224,179,65,.12); color:#E0B341; font-size:12.5px; font-weight:600; cursor:pointer; font-family:inherit; transition:background .15s; }
+        .notice-retry:hover { background:rgba(224,179,65,.2); }
         .work-tools { display:flex; align-items:center; gap:2px; margin-top:5px; height:26px; opacity:0; transition:opacity .15s; }
         .work-col:hover .work-tools { opacity:1; }
         .work-time { font-size:11.5px; color:var(--dim); margin-right:6px; }
@@ -440,6 +456,9 @@ export default function App() {
         .listen-backdrop { position:fixed; inset:0; z-index:29; background:rgba(8,8,10,.45); animation:fadeIn .22s ease; pointer-events:none; }
         .listen-backdrop.strong { background:rgba(8,8,10,.62); pointer-events:auto; }
         .dock { z-index:31; }
+        /* 텍스트 입력 포커스: 절제된 떠오름 (상승 8px · 스케일 1.02) */
+        .dock.focused .dock-inner { transform:translateY(-8px) scale(1.02); border-color:#3d3d44; box-shadow:0 18px 60px rgba(0,0,0,.6); }
+        /* 음성 인식: 한 단계 더 (상승 10px · 스케일 1.025 · 코랄 글로우) */
         .dock.listening .dock-inner { transform:translateY(-10px) scale(1.025); border-color:rgba(229,112,91,.5); box-shadow:0 22px 70px rgba(0,0,0,.65), 0 0 0 4px rgba(229,112,91,.10); }
         /* 플레이스홀더 shimmer — 기준색 위로 밝은 하이라이트가 주기적으로 흐름 */
         .ph-wrap { position:relative; flex:1; min-width:0; display:flex; }
@@ -451,7 +470,7 @@ export default function App() {
         .ph-shimmer.coral { --ph-base:#E5705B; --ph-sheen:#FFD9CF; }
         @keyframes phShimmer { 0% { background-position:100% 0; } 100% { background-position:-100% 0; } }
         @media (prefers-reduced-motion: reduce) { .ph-shimmer { animation:none; background:none; color:var(--ph-base); } }
-        @media (prefers-reduced-motion: reduce) { .dock.listening .dock-inner { transform:none; } .listen-backdrop { backdrop-filter:none; } }
+        @media (prefers-reduced-motion: reduce) { .dock.listening .dock-inner, .dock.focused .dock-inner { transform:none; } .listen-backdrop { backdrop-filter:none; } }
         .mic-btn { background:transparent; color:var(--mfg); border-radius:50%; }
         .mic-btn:hover { background:var(--muted); color:var(--fg); }
         .mic-btn.listening { background:#E5705B; color:#fff; animation:micPulse 1.6s ease-in-out infinite; }
@@ -534,16 +553,23 @@ export default function App() {
                     <button className="btn btn-ghost btn-icon" style={{ width: 24, height: 24, flexShrink: 0 }} title="관심사 편집"
                       onClick={(e) => { e.stopPropagation(); setEditingId(editingId === l.id ? null : l.id); setDraft(l.concerns); }}><Pencil size={12} /></button>
                   </div>
-                  {editingId === l.id && (
+                  {editingId === l.id && (() => {
+                    const draftItems = draft.split(/[,，]/).map((s) => s.trim()).filter(Boolean);
+                    const valid = draftItems.length >= 1 && draftItems.length <= 5;
+                    return (
                     <div style={{ padding: "8px 10px 4px" }}>
-                      <div className="desc" style={{ fontSize: 11.5, marginBottom: 6 }}>관심사 · 한 번 정의하면 재사용됩니다</div>
+                      <div className="desc" style={{ fontSize: 11.5, marginBottom: 6 }}>관심사 · 쉼표로 구분 · 한 번 정의하면 재사용됩니다</div>
                       <textarea className="inp" value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} style={{ resize: "vertical" }} />
+                      <div style={{ fontSize: 11.5, marginTop: 5, color: valid ? "var(--dim)" : "#E5705B" }}>
+                        {draftItems.length}/5개 {!valid && (draftItems.length < 1 ? "· 최소 1개가 필요해요" : "· 최대 5개까지예요")}
+                      </div>
                       <div style={{ display: "flex", gap: 6, marginTop: 7 }}>
-                        <button className="btn btn-default btn-sm" style={{ flex: 1 }} onClick={() => saveConcerns(l.id)}><Check size={13} /> 저장</button>
+                        <button className="btn btn-default btn-sm" style={{ flex: 1, opacity: valid ? 1 : 0.45, cursor: valid ? "pointer" : "not-allowed" }} disabled={!valid} onClick={() => saveConcerns(l.id)}><Check size={13} /> 저장</button>
                         {roles.length > 2 && <button className="btn btn-danger btn-sm" title="이 직군 삭제" onClick={() => removeRole(l.id)}><Trash2 size={13} /></button>}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               );
             })}
@@ -584,7 +610,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="work-col">
-                  <div className="work-bubble" title="클릭하면 이 자리에서 수정할 수 있어요" onClick={startEditWork}>{content}</div>
+                  <div className="work-bubble">{content}</div>
                   <div className="work-tools">
                     <span className="work-time">{fmtTime(sentAt)}</span>
                     <Tooltip label="재시도"><button className="msg-btn" onClick={resendAll}><RefreshCw size={14} /></button></Tooltip>
@@ -593,6 +619,14 @@ export default function App() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {concernsDirty && openIds.length > 0 && (
+            <div className="notice">
+              <Info size={15} style={{ flexShrink: 0 }} />
+              <span style={{ flex: 1 }}>관심사가 변경되었어요. 다시 시도하면 열린 직군 렌즈에 새 관심사가 반영됩니다.</span>
+              <button className="notice-retry" onClick={resendAll}><RefreshCw size={13} /> 다시 시도</button>
             </div>
           )}
 
@@ -688,7 +722,7 @@ export default function App() {
       </main>
 
       {(listening || dockFocused) && <div className={"listen-backdrop" + (listening ? " strong" : "")} onClick={listening ? stopVoice : undefined} />}
-      <div className={"dock" + (listening ? " listening" : "")}>
+      <div className={"dock" + (listening ? " listening" : "") + (dockFocused ? " focused" : "")}>
         <div className="dock-inner">
           {speechSupported && (
             <button className={"btn btn-icon mic-btn" + (listening ? " listening" : "")} style={{ width: 34, height: 34, flexShrink: 0 }}
