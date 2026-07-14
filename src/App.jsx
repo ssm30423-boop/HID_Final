@@ -295,9 +295,15 @@ export default function App() {
   }
 
   function changeSubject(id) {
-    setSubjectId(id); setEditingId(null); setConcernsDirty(false);
+    if (id === subjectId) return;
+    const prevId = subjectId;
     const subj = roles.find((r) => r.id === id);
-    openIds.forEach((pid) => { const r = roles.find((x) => x.id === pid); if (r) runLens(r, content, subj); });
+    setSubjectId(id); setEditingId(null); setConcernsDirty(false);
+    const open = Object.keys(panels).filter((pid) => panels[pid]);
+    // 새 주체가 대상 패널로 열려 있었다면, 그 자리를 이전 주체 패널로 스왑
+    const nextIds = [...new Set(open.map((pid) => (pid === id ? prevId : pid)))];
+    setPanels({});
+    nextIds.forEach((pid) => { const r = roles.find((x) => x.id === pid); if (r) runLens(r, content, subj); });
   }
   function toggleLens(role) { if (panels[role.id]) closePanel(role.id); else if (canGenerate) runLens(role); }
   function closePanel(id) { setPanels((p) => { const n = { ...p }; delete n[id]; return n; }); }
@@ -356,7 +362,13 @@ export default function App() {
         @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
         @keyframes shimmer { 0%{background-position:-200px 0;} 100%{background-position:200px 0;} }
         .skel { background:linear-gradient(90deg,#1B1B1F 0,#29292e 80px,#1B1B1F 160px); background-size:400px 100%; animation:shimmer 1.1s infinite linear; border-radius:6px; }
-        .panel { animation:fadeUp .35s ease both; }
+        .panel { animation:fadeUp .35s ease both; position:relative; }
+        /* spotlight — 마우스를 따라다니는 은은한 직군색 광원 (호버 시) */
+        .panel::before { content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none; z-index:1;
+          background:radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), var(--spot, rgba(255,255,255,.06)), transparent 65%);
+          opacity:0; transition:opacity .3s ease; }
+        .panel:hover::before { opacity:1; }
+        @media (prefers-reduced-motion: reduce) { .panel::before { display:none; } }
         .card { background:var(--card); border:1px solid var(--border); border-radius:14px; }
         .desc { font-size:13px; color:var(--mfg); line-height:1.5; }
         .badge { display:inline-flex; align-items:center; gap:5px; border-radius:6px; padding:2px 9px; font-size:12px; font-weight:600; }
@@ -550,14 +562,14 @@ export default function App() {
           <RoleDropdown roles={roles} subjectId={subjectId} onSelect={changeSubject} />
         </div>
         <div className="side-section">
-          <div className="side-label">누구에게 설명할까요</div>
+          <div className="side-label">대상</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {targets.map((l) => {
               const active = !!panels[l.id];
               return (
                 <div key={l.id}>
                   <div className="side-lens" data-active={active} onClick={() => toggleLens(l)}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: l.tag, flexShrink: 0 }} />
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: l.tag, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.name}</div>
                       <div style={{ fontSize: 11, color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.concerns}</div>
@@ -699,7 +711,8 @@ export default function App() {
               if (!lens) return null;
               const stale = panel.status === "done" && panel.basedOn !== content;
               return (
-                <div key={id} className="card panel" style={{ flex: "1 1 300px", minWidth: 280, overflow: "hidden", opacity: stale ? 0.5 : 1, borderColor: stale ? "var(--border)" : lens.tag + "55", transition: "opacity .2s,border-color .2s" }}>
+                <div key={id} className="card panel" style={{ flex: "1 1 300px", minWidth: 280, overflow: "hidden", opacity: stale ? 0.5 : 1, borderColor: stale ? "var(--border)" : lens.tag + "55", transition: "opacity .2s,border-color .2s", "--spot": lens.tag + "17" }}
+                  onMouseMove={(e) => { const rc = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty("--mx", (e.clientX - rc.left) + "px"); e.currentTarget.style.setProperty("--my", (e.clientY - rc.top) + "px"); }}>
                   <div style={{ padding: "11px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", background: soft(lens.tag), borderBottom: `1px solid ${lens.tag}2E` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: lens.tag }}>
                       <span style={{ color: "var(--dim)", fontWeight: 400 }}>{subject.name}</span><ChevronRight size={13} /><span>{lens.name}</span>
