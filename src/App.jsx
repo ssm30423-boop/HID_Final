@@ -142,6 +142,26 @@ export default function App() {
   const dockRef = useRef(null);
   const [dockHasText, setDockHasText] = useState(false);
   const [dockFocused, setDockFocused] = useState(false);
+
+  // 대상 칩 줄 — 스크롤바 없이 마우스 드래그로 스크롤 (터치는 네이티브 스와이프)
+  const listRef = useRef(null);
+  const dragRef = useRef({ down: false, x: 0, sl: 0, moved: false });
+  function listDown(e) {
+    if (e.pointerType !== "mouse") return; // 터치는 브라우저 기본 스크롤 사용
+    const el = listRef.current; if (!el) return;
+    dragRef.current = { down: true, x: e.clientX, sl: el.scrollLeft, moved: false };
+  }
+  function listMove(e) {
+    const s = dragRef.current; const el = listRef.current;
+    if (!s.down || !el || e.pointerType !== "mouse") return;
+    const dx = e.clientX - s.x;
+    if (Math.abs(dx) > 5) s.moved = true;
+    el.scrollLeft = s.sl - dx;
+  }
+  function listUp() {
+    dragRef.current.down = false;
+    setTimeout(() => { dragRef.current.moved = false; }, 0);
+  }
   const [sentAt, setSentAt] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -406,9 +426,9 @@ export default function App() {
 
         /* 살아있는 로고 — 외곽은 천천히 회전, 눈동자는 두리번, 이따금 깜빡 */
         .lens-logo { display:block; overflow:visible; color:var(--fg); }
-        .logo-spin { transform-origin:41px 43px; animation:logoSpin 46s linear infinite; }
-        .logo-blink { transform-origin:43px 41px; animation:logoBlink 7.2s ease-in-out infinite; }
-        .logo-pupil { animation:logoPupil 8.6s ease-in-out infinite; }
+        .logo-spin { transform-box:fill-box; transform-origin:50% 50%; animation:logoSpin 46s linear infinite; }
+        .logo-blink { transform-box:fill-box; transform-origin:50% 50%; animation:logoBlink 7.2s ease-in-out infinite; }
+        .logo-pupil { transform-box:fill-box; animation:logoPupil 8.6s ease-in-out infinite; }
         @keyframes logoSpin { to { transform:rotate(360deg); } }
         @keyframes logoBlink {
           0%, 36%, 40%, 74%, 78%, 100% { transform:scaleY(1); }
@@ -427,10 +447,13 @@ export default function App() {
           .logo-spin, .logo-blink, .logo-pupil { animation:none; }
         }
         .side-label { font-size:11px; font-weight:600; letter-spacing:.06em; color:var(--dim); text-transform:uppercase; margin:0 6px 9px; }
-        .side-section { margin-bottom:22px; }
+        .side-section { margin-bottom:22px; position:relative; z-index:1; }
+        .side-list { display:flex; flex-direction:column; gap:4px; scrollbar-width:none; -ms-overflow-style:none; }
+        .side-list::-webkit-scrollbar { display:none; }
         .side-lens { display:flex; align-items:center; gap:9px; padding:9px 10px; border-radius:10px; border:1px solid transparent; cursor:pointer; transition:background .15s,border-color .15s; }
         .side-lens:hover { background:var(--muted); }
         .side-lens[data-active="true"] { background:var(--card); border-color:var(--border); }
+        .side-lens[data-active="true"]:hover { background:#202024; border-color:#3a3a40; }
         .side-add { display:flex; align-items:center; gap:7px; width:100%; padding:9px 10px; border-radius:10px; border:1px dashed var(--border); background:transparent; color:var(--mfg); font-size:13.5px; cursor:pointer; transition:background .15s; }
         .side-add:hover { background:var(--muted); }
 
@@ -503,7 +526,17 @@ export default function App() {
 
         @media (max-width: 880px) {
           .lens-root { --side:0px; }
-          .sidebar { position:static; width:100%; border-right:none; border-bottom:1px solid var(--border); }
+          .sidebar { position:static; width:100%; height:auto; border-right:none; border-bottom:1px solid var(--border); padding:16px 16px 12px; overflow:visible; }
+          .side-brand { margin-bottom:14px; }
+          .side-section { margin-bottom:14px; }
+          .side-list { flex-direction:row; overflow-x:auto; gap:8px; padding-bottom:6px; -webkit-overflow-scrolling:touch; user-select:none; -webkit-user-select:none; cursor:grab; }
+          .side-list:active { cursor:grabbing; }
+          .side-list > div { flex:0 0 auto; }
+          .side-lens { border:1px solid var(--border); border-radius:18px; padding:8px 13px; background:var(--card); }
+          .side-lens[data-active="true"] { border-color:#3a3a40; }
+          .side-lens[data-active="true"]:hover { background:#202024; }
+          .lens-desc { display:none; }
+          .side-add { width:auto; border-radius:18px; padding:8px 13px; white-space:nowrap; }
           .main { margin-left:0; padding:24px 18px 150px; }
           .dock { left:0; padding:14px 18px 18px; }
           .work-bubble { max-width:90%; }
@@ -563,18 +596,17 @@ export default function App() {
         </div>
         <div className="side-section">
           <div className="side-label">대상</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div className="side-list" ref={listRef} onPointerDown={listDown} onPointerMove={listMove} onPointerUp={listUp} onPointerLeave={listUp}>
             {targets.map((l) => {
               const active = !!panels[l.id];
               return (
                 <div key={l.id}>
-                  <div className="side-lens" data-active={active} onClick={() => toggleLens(l)}>
+                  <div className="side-lens" data-active={active} onClick={() => { if (dragRef.current.moved) return; toggleLens(l); }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: l.tag, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 600, fontSize: 13.5 }}>{l.name}</div>
-                      <div style={{ fontSize: 11, color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.concerns}</div>
+                      <div className="lens-desc" style={{ fontSize: 11, color: "var(--dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.concerns}</div>
                     </div>
-                    {active && <span style={{ fontSize: 10.5, color: l.tag, fontWeight: 600, flexShrink: 0 }}>표시중</span>}
                     <button className="btn btn-ghost btn-icon" style={{ width: 24, height: 24, flexShrink: 0 }} title="관심사 편집"
                       onClick={(e) => { e.stopPropagation(); setEditingId(editingId === l.id ? null : l.id); setDraft(l.concerns); }}><Pencil size={12} /></button>
                   </div>
