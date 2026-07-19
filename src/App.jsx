@@ -590,7 +590,7 @@ export default function App() {
 
       <aside className="sidebar">
         <div className="side-brand"><LensLogo size={36} /></div>
-        <div className="side-section" style={{ position: "relative" }}>
+        <div className="side-section" style={{ position: "relative", zIndex: 30 }}>
           <div className="side-label">주체</div>
           <RoleDropdown roles={roles} subjectId={subjectId} onSelect={changeSubject} />
         </div>
